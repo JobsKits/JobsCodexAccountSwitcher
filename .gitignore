@@ -1,0 +1,8 @@
+# 本机环境、构建中间产物与成品不入库。
+work/
+.venv/
+dist/
+*.lnk
+*.app
+*.dmg
+*.zip
