@@ -14,7 +14,7 @@
 
 ![Snipaste_2026-10-03_08-29-21](./assets/Snipaste_2026-10-03_08-29-21.png)
 
-## 一、功能与边界
+## 一、功能与边界 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 | 功能 | 行为 |
 | --- | --- |
@@ -27,7 +27,7 @@
 
 JWT 解析仅用于本地账户匹配，不进行服务器验签，也不代表 Token 仍有效。会话过期、撤销、工作区策略变化时仍需重新浏览器授权。Mac 文件权限使用仅当前用户读写；Windows 依赖用户配置目录继承的 ACL，恢复后的 `auth.json` 是 Codex 所需的明文文件。
 
-## 二、目录与入口
+## 二、目录与入口 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 ```text
 ./
@@ -45,7 +45,7 @@ JWT 解析仅用于本地账户匹配，不进行服务器验签，也不代表 
 
 macOS 必须在 Mac 本机生成 APP / DMG；Windows 必须在 Windows 本机生成 EXE / ZIP。成品包含 Python 和依赖，使用成品不需要安装 Python。Windows 可选择普通安装或商店安装的实际 EXE 路径；受保护的商店路径可能因权限拒绝启动，此时需通过系统正常启动应用。
 
-## 三、首次设置与操作
+## 三、首次设置与操作 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 1、运行切换器，确认 Codex 数据目录与桌面程序路径。默认读取 `CODEX_HOME`，未设置时使用当前用户的 `.codex`。macOS 按 Bundle ID 发现应用，兼容桌面应用更名为 `ChatGPT.app`；Windows 提供候选安装路径和手动选择 EXE。
 
@@ -63,7 +63,7 @@ macOS 必须在 Mac 本机生成 APP / DMG；Windows 必须在 Windows 本机生
 
 在账户列表中右键目标账户，选择“更改备注”。输入框预填原备注，确定后立即保存并保持选中；取消不修改。备注为 1～80 个字符，不能与其它账户重复。此操作不需要退出 Codex，也不会修改登录凭据。账户行及列表空白处的右键菜单均提供“刷新缓存状态”；账户列表支持鼠标滚轮、触控板和垂直滚动条，账户多时仍可上下查看。
 
-## 四、开发与打包
+## 四、开发与打包 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 需要 Python 3.11+。双击平台打包入口，先阅读内置自述。构建器创建 / 复用内层 `.venv`；依赖缺失时直接回车联网安装，任意非空输入取消，EOF 不代表同意。健康依赖不升级。直接调用构建器同样需要确认。
 
@@ -85,7 +85,7 @@ python3 -m venv ./JobsCodexAccountSwitcher/.venv
 
 Windows 将虚拟环境解释器替换为 `JobsCodexAccountSwitcher\.venv\Scripts\python.exe`。
 
-## 五、数据、日志与恢复
+## 五、数据、日志与恢复 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 - `accounts.enc`：Qt 当前用户应用数据目录下 `Jobs/CodexAccountSwitcher` 的账户库。为兼容旧版保持文件名；免口令时内容为明文 JSON，开启口令后内容为密文，实际目录由系统决定；与源码、dist 分离，重新打包不清理账户库。
 - 界面设置：Qt `QSettings` 保存外观、数据目录和应用路径，不保存口令或 Token。
@@ -95,7 +95,7 @@ Windows 将虚拟环境解释器替换为 `JobsCodexAccountSwitcher\.venv\Script
 - `instance.lock`：工具实例锁；Codex 数据目录的 `.jobs-account-switch.lock`：文件操作互斥锁。异常后需确认没有工具运行，再人工移除残留操作锁，禁止在并发切换时删除。
 - 拷贝账户库到另一台电脑时，只有加密模式需要同一口令；免口令文件包含明文授权，可能暴露有效授权；默认每台机器分别正常授权，不提供自动同步。
 
-## 六、验证与常见问题
+## 六、验证与常见问题 <a href="#前言" style="font-size:17px; color:green;"><b>🔼</b></a> <a href="#🔚" style="font-size:17px; color:green;"><b>🔽</b></a>
 
 测试使用虚拟 Token 和临时目录，不访问真实 Google / ChatGPT 账户。测试覆盖密文与错误口令、源 / 目标凭据刷新保存、写入失败、运行保护、非 file 存储、名称冲突、锁、符号链接、独立授权录入及临时清理、三态主题与重启恢复，以及免口令默认打开、两种模式转换、旧加密库兼容、转换失败保护和取消设置。
 
