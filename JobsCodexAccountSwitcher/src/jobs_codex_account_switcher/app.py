@@ -1,12 +1,12 @@
 """跨平台账户管理窗口。Created by Jobs."""
 import os
+import argparse
 from pathlib import Path
 import sys
 import shutil
 import tempfile
 
 from PySide6.QtCore import QLockFile, QSettings, QStandardPaths, Qt, QTimer, QProcess, QProcessEnvironment, QThread, Signal
-from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout,
                                QInputDialog, QMenu, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout,
@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, 
 
 from .core import FileSwitcher, Vault, identity
 from .platforms import discover_apps, launch, require_stopped, close_app
+from .appearance import apply_appearance
+from .token_hooks import TokenHookError
 
 
 class SwitchWorker(QThread):
@@ -97,6 +99,14 @@ class Window(QWidget):
         self.theme.setFixedWidth(120)
         self.appearance_slot.addWidget(self.theme, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(form)
+        token_actions = QHBoxLayout()
+        self.token_button = QPushButton('打开 Token 悬浮窗')
+        self.token_button.clicked.connect(lambda: self.execute(self.open_token_widget))
+        token_actions.addWidget(self.token_button)
+        self.token_hook_button = QPushButton('配置 Codex 联动')
+        self.token_hook_button.clicked.connect(self.token_hook_menu)
+        token_actions.addWidget(self.token_hook_button)
+        layout.addLayout(token_actions)
         self.password_protection = QCheckBox('启用口令保护（可选；关闭后账户库为本地明文）')
         self.password_protection.setEnabled(False)
         self.password_protection.toggled.connect(self.change_protection)
@@ -132,6 +142,8 @@ class Window(QWidget):
         from .core import SwitchError
         try:
             action()
+        except TokenHookError as error:
+            QMessageBox.warning(self, 'Token 控件操作未完成', str(error))
         except SwitchError as error:
             QMessageBox.warning(self, '操作未完成', str(error))
         except Exception as error:
@@ -415,48 +427,88 @@ class Window(QWidget):
         if path:
             self.program.setText(path)
 
+    def open_token_widget(self):
+        from .token_hooks import launch_token_widget
+        home = Path(self.home.text()).expanduser().absolute()
+        launch_token_widget(home)
+        self.status.setText('Token 悬浮窗已启动，将只读接入已有 Codex 会话；账户库保持当前状态。')
+
+    def token_hook_menu(self):
+        menu = QMenu(self)
+        menu.addAction('启用会话启动联动', lambda: self.execute(self.install_token_hook))
+        menu.addAction('移除本工具的联动', lambda: self.execute(self.remove_token_hook))
+        menu.exec(self.token_hook_button.mapToGlobal(self.token_hook_button.rect().bottomLeft()))
+
+    def install_token_hook(self):
+        from .token_hooks import install_token_hook
+        result = install_token_hook(Path(self.home.text()).expanduser().absolute())
+        self.open_token_widget()
+        self.status.setText('已配置 SessionStart / Stop 联动：启动独立浮窗，并在对应轮次显示用量提示。\n'
+                            '新 / 修改的钩子需在 Codex CLI 的 /hooks 中审阅并信任后生效。\n'
+                            + (f'原配置备份：{result.backup_path}' if result.backup_path else ''))
+
+    def remove_token_hook(self):
+        from .token_hooks import uninstall_token_hook
+        result = uninstall_token_hook(Path(self.home.text()).expanduser().absolute())
+        self.status.setText('已移除本工具的会话联动；其它钩子保留，当前悬浮控件可继续监听。'
+                            + (f'\n原配置备份：{result.backup_path}' if result.backup_path else ''))
+
     def apply_theme(self):
-        """Fusion 与统一 Palette 覆盖原生弹窗、列表、禁用态及选择颜色。"""
+        """账户窗口和独立浮窗复用统一的三态主题。"""
         mode = self.theme.currentIndex()
         self.settings.setValue('theme', mode)
-        dark = mode == 2 or (mode == 0 and QApplication.instance().styleHints().colorScheme() == Qt.ColorScheme.Dark)
-        palette = QPalette()
-        roles = QPalette.ColorRole
-        colors = {roles.Window: '#202124' if dark else '#f5f6f8',
-                  roles.WindowText: '#f1f3f4' if dark else '#202124',
-                  roles.Base: '#292b2f' if dark else '#ffffff',
-                  roles.AlternateBase: '#34373d' if dark else '#eef1f5',
-                  roles.Text: '#f1f3f4' if dark else '#202124',
-                  roles.Button: '#34373d' if dark else '#e7eaf0',
-                  roles.ButtonText: '#f1f3f4' if dark else '#202124',
-                  roles.Highlight: '#3977bc', roles.HighlightedText: '#ffffff',
-                  roles.ToolTipBase: '#292b2f' if dark else '#ffffff',
-                  roles.ToolTipText: '#f1f3f4' if dark else '#202124',
-                  roles.PlaceholderText: '#aab0b8' if dark else '#626975',
-                  roles.Light: '#565b65' if dark else '#ffffff',
-                  roles.Mid: '#41454d' if dark else '#bac1cc',
-                  roles.Dark: '#151619' if dark else '#8b929e',
-                  roles.Shadow: '#111111' if dark else '#646a74',
-                  roles.Link: '#91c3ff' if dark else '#155ca8'}
-        for role, color in colors.items():
-            palette.setColor(role, QColor(color))
-        for role in (roles.Text, roles.WindowText, roles.ButtonText):
-            palette.setColor(QPalette.ColorGroup.Disabled, role, QColor('#969aa4' if dark else '#727987'))
-        QApplication.instance().setPalette(palette)
+        apply_appearance(mode)
 
 
-def main():
-    app = QApplication(sys.argv)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Jobs Codex 账户切换器与独立 Token 控件')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--token-widget', action='store_true', help='只启动 Token 悬浮窗')
+    mode.add_argument('--hook-launch', action='store_true', help='钩子后台启动独立悬浮窗并立即返回')
+    mode.add_argument('--hook-report', action='store_true', help='结束钩子输出本轮用量提示')
+    mode.add_argument('--install-token-hook', action='store_true', help='备份并安装全局 SessionStart 联动')
+    mode.add_argument('--remove-token-hook', action='store_true', help='只移除本工具的联动')
+    parser.add_argument('--codex-home', type=Path, default=Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex'))))
+    args, qt_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    home = args.codex_home.expanduser().absolute()
+    if args.hook_launch or args.hook_report or args.install_token_hook or args.remove_token_hook:
+        from .token_hooks import install_token_hook, uninstall_token_hook, launch_token_widget
+        try:
+            if args.hook_report:
+                from .hook_report import report_from_stdin
+                return report_from_stdin(home)
+            elif args.hook_launch:
+                launch_token_widget(home)
+            else:
+                result = install_token_hook(home) if args.install_token_hook else uninstall_token_hook(home)
+                print(f'钩子配置：{result.hooks_path}')
+                if result.backup_path:
+                    print(f'备份：{result.backup_path}')
+                if args.install_token_hook:
+                    print('新 / 修改的钩子需在 Codex CLI 的 /hooks 中审阅并信任。')
+            return 0
+        except TokenHookError as error:
+            print(f'Token 联动配置失败：{error}', file=sys.stderr)
+            return 1
+        except Exception as error:
+            print(f'{type(error).__name__}：Token 联动配置失败，请检查目录和 hooks.json。', file=sys.stderr)
+            return 1
+    app = QApplication([sys.argv[0], *qt_args])
     app.setStyle('Fusion')
     app.setOrganizationName('Jobs')
-    app.setApplicationName('CodexAccountSwitcher')
+    app.setApplicationName('CodexTokenWidget' if args.token_widget else 'CodexAccountSwitcher')
     data_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
     data_dir.mkdir(parents=True, exist_ok=True)
+    if args.token_widget:
+        from .token_widget import run_token_widget
+        return run_token_widget(app, home, data_dir)
     lock = QLockFile(str(data_dir / 'instance.lock'))
     if not lock.tryLock(0):
         QMessageBox.warning(None, '已有实例', '账户切换器已经运行。')
         return 1
     window = Window(data_dir)
+    if '--codex-home' in (sys.argv[1:] if argv is None else argv):
+        window.home.setText(str(home))
     window.show()
     return app.exec()
 

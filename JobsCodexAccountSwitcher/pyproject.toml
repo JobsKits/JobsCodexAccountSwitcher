@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jobs-codex-account-switcher"
-version = "0.1.0"
-description = "Jobs Codex 桌面账户切换工具"
+version = "0.2.0"
+description = "Jobs Codex 桌面账户切换与独立 Token 悬浮窗"
 requires-python = ">=3.11"
 dependencies = ["PySide6>=6.8,<7", "cryptography>=43", "psutil>=6"]
 
