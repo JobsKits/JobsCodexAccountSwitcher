@@ -576,19 +576,32 @@ prepare_display_paths() {
     SCRIPT_DIR="${${functions_source[prepare_display_paths]}:A:h}"
     LOG_FILE="${TMPDIR:-/tmp}/JobsCodexAccountSwitcher-build.log"
 }
-# 彩色终端使用红色粗体标题、蓝色常规正文，其它环境保持纯文本。
+# 仅渲染自述：标题红色加粗，编号正文蓝色常规字重；非彩色终端输出纯文本。
+jobs_intro_style() {
+  local intro_color=0
+  if [ -t 1 ] && [ -n "${TERM:-}" ] && [ "${TERM:-}" != dumb ] &&
+     [ -z "${NO_COLOR+x}" ] && [ "${PLAIN_OUTPUT:-0}" != 1 ] &&
+     [ "${IS_SOURCETREE_RUNTIME:-0}" != 1 ]; then
+    intro_color=1
+  fi
+  /usr/bin/awk -v color="$intro_color" -v role="${1:-body}" '
+    BEGIN { esc = sprintf("%c", 27) }
+    {
+      gsub(esc "\\[[0-9;]*m", "")
+      gsub(/\\(033|e|x1[bB])\[[0-9;]*m/, "")
+      if (!color || $0 ~ /^[[:space:]]*$/) { print; next }
+      numbered = ($0 ~ /^[[:space:]➤ℹ🔹✔⚠]*([0-9]+[、.)）]|[0-9]+️⃣|[-•])/)
+      heading = ($0 ~ /^[[:space:]]*#{1,6}[[:space:]]/ || $0 ~ /[：:][[:space:]]*$/ || $0 ~ /^[[:space:]]*[=━─-]{3}/)
+      title = (!numbered && (role == "title" || heading))
+      if (role == "auto" && !seen && !numbered) title = 1
+      if ($0 !~ /^[[:space:]]*[=━─-]+[[:space:]]*$/) seen = 1
+      printf "%s%s%s\n", esc (title ? "[1;31m" : "[0;34m"), $0, esc "[0m"
+    }
+  '
+}
+# 将单行自述交给纯展示样式函数，确认与业务逻辑不进入管道。
 print_intro_line() {
-    local role="$1"
-    local message="$2"
-    if [[ -t 1 && -n "${TERM:-}" && "${TERM:-}" != dumb && -z "${NO_COLOR+x}" ]]; then
-        if [[ "$role" == title ]]; then
-            printf '\033[1;31m%s\033[0m\n' "$message"
-        else
-            printf '\033[0;34m%s\033[0m\n' "$message"
-        fi
-    else
-        print -r -- "$message"
-    fi
+    print -r -- "$2" | jobs_intro_style "$1"
 }
 # 展示构建范围，在真实业务开始前等待回车确认。
 show_script_intro_and_wait() {
@@ -636,7 +649,7 @@ prepare_python_runtime() {
 main() {
     show_script_intro_and_wait # 先确认范围，避免误触。
     initialize_runtime # 确认后设置原生 zsh 运行选项。
-  prepare_python_runtime # 内置功能更新 Homebrew、检查并修复 Python。
+    prepare_python_runtime # 内置功能更新 Homebrew、检查并修复 Python。
     check_environment # 确认 Python 和标准库健康。
     run_build # 生成两个真实入口及分发包，再定位并启动 Token 浮窗。
 }
