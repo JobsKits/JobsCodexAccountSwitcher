@@ -2,11 +2,28 @@
 
 ![Jobs出品，必属精品](https://picsum.photos/1500/400)
 
-[toc]
+<!-- jobs-toc:start -->
+<!-- jobs-toc:source {"v":2,"token":"[toc]"} -->
+<details>
+<summary>📚 目录（点击展开 / 收起）</summary>
+
+- [🔥 前言](#jobs-toc-heading-1)
+- [一、功能与工程归属](#features)
+- [二、目录与入口](#layout)
+- [三、账户设置与操作](#account-operations)
+- [四、开发与打包](#development)
+  - [【MacOS】📦生成dmg.command](#jobs-toc-heading-6)
+  - [【Windows】📦生成exe.bat](#jobs-toc-heading-7)
+- [五、数据、日志与恢复](#data-recovery)
+- [六、验证与常见问题](#verification)
+- [七、本仓目录与脚本入口](#repository-layout-and-entrypoints)
+
+</details>
+<!-- jobs-toc:end -->
 
 ---
 
-## 🔥 <font id=前言>前言</font>
+## <span id="jobs-toc-heading-1" data-jobs-toc="v2">🔥 <font id=前言>前言</font></span><!-- jobs-toc:heading-end -->
 
 使用 [**Python**](https://www.python.org/) 和 [**PySide6**](https://doc.qt.io/qtforpython-6/) 编写的 [**macOS**](https://www.apple.com/macos/) / [**Windows**](https://www.microsoft.com/windows) 账户切换工具。通过保存、恢复 [**Codex**](https://openai.com/codex) 的文件登录缓存并重启桌面应用，减少重复浏览器授权。添加账户在独立临时 `CODEX_HOME` 中授权，不覆盖当前桌面登录文件。
 
@@ -120,7 +137,7 @@ Windows PowerShell：
 
 已打开的客户端可能继续执行旧钩子：旧 `--hook-report` 只输出合法 JSON 迁移提示并退出，旧 `--hook-launch` 静默退出。这两条退役路径只使用标准库，不读取会话、账户或输入事件，不启动 / 调用监控工具，也不打开账户窗口。监控 GUI、安装或移除钩子的参数仍拒绝；新钩子只应指向独立监控 APP。
 
-### [【MacOS】📦生成dmg.command](./【MacOS】📦生成dmg.command)
+### <span id="jobs-toc-heading-6" data-jobs-toc="v2">[【MacOS】📦生成dmg.command](./【MacOS】📦生成dmg.command)</span><!-- jobs-toc:heading-end -->
 
 > **目的：** 在本机生成 JobsCodexAccountSwitcher 的 APP / DMG，并打开本次成品。
 
@@ -130,7 +147,7 @@ Windows PowerShell：
 * 打包并校验 APP，封装 DMG，统一输出到 `dist/YYYY.MM.DD HH-mm-ss/`。
 * 更新第一层产物快捷方式，打开产物目录，再启动本次 APP；失败时查看系统临时目录中的构建日志。
 
-### [【Windows】📦生成exe.bat](./【Windows】📦生成exe.bat)
+### <span id="jobs-toc-heading-7" data-jobs-toc="v2">[【Windows】📦生成exe.bat](./【Windows】📦生成exe.bat)</span><!-- jobs-toc:heading-end -->
 
 > **目的：** 在 Windows 本机生成 JobsCodexAccountSwitcher 的 EXE 分发目录与 ZIP。
 
