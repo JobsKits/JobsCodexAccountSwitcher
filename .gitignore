@@ -1,6 +1,11 @@
 # 本机环境、构建中间产物与成品不入库。
 work/
 .venv/
+.venv-*/
+.venv.backup*/
+__pycache__/
+*.py[cod]
+*.egg-info/
 dist/
 *.lnk
 *.app

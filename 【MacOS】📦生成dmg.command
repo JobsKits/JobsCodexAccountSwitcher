@@ -1,12 +1,16 @@
 #!/bin/zsh
-# 脚本自述：在本机生成账户切换器、独立 Token 浮窗入口及 DMG；不切换 Codex 账户。
+# 脚本自述：在 macOS 本机生成 Jobs Codex Account Switcher APP / DMG。
 # shell: zsh
-# 清理本工具 dist 旧包；缺失依赖由 Python 构建器回车确认安装。
-# 展示范围并等待确认；成功后发布两 APP/DMG 链接、打开位置并启动 Token 浮窗。
+# 清理仅限当前工具 dist；先复用健康 Python 3.11+，缺失时回车确认安装。
+# Homebrew 自检更新和 Python 修复均在本脚本内封装；实际打包由内层确认。
 # >>> Jobs Homebrew install choice >>>
 # 输出安装诊断，避免混入返回的命令路径。
 jobs_brew_note() {
   print -u2 -r -- "ℹ $*"
+  if [[ "${_JOBS_ENV_LOG_READY:-0}" == 1 && -n "${LOG_FILE:-}" ]]; then
+    print -r -- "ℹ $*" >> "$LOG_FILE"
+  fi
+  return 0
 }
 # 验证候选能够执行；共享安装只读不代表未安装。
 jobs_brew_candidate_ok() {
@@ -60,16 +64,64 @@ jobs_brew_choose_installation() {
     typeset -g JOBS_HOMEBREW_INSTALL_MODE=user
   fi
 }
-# 将官方系统安装器下载到临时文件后执行，失败不自动改装到用户目录。
+# 有限重试临时网络错误；每次重新下载，只在给定的官方地址之间回退。
+jobs_brew_download_file() {
+  local destination="$1" description="$2" download_url attempt download_result=1 http_code
+  local -a request_headers
+  shift 2
+  for download_url in "$@"; do
+    request_headers=()
+    if [[ "$download_url" == https://api.github.com/repos/Homebrew/install/contents/install.sh\?ref=HEAD ]]; then
+      request_headers=(-H 'Accept: application/vnd.github.raw+json')
+    fi
+    for attempt in 1 2 3; do
+      jobs_brew_note "下载${description}（第 $attempt/3 次）：$download_url"
+      download_result=0
+      http_code="$(curl -q -fsSL --proto '=https' --proto-redir '=https' \
+        --connect-timeout 10 --max-time 30 "${request_headers[@]}" \
+        --write-out '%{http_code}' "$download_url" -o "$destination" \
+        2> >(tee -a "${LOG_FILE:-/dev/null}" >&2))" || download_result=$?
+      if (( download_result == 0 )); then
+        return 0
+      fi
+      rm -f -- "$destination" || return 1
+      jobs_brew_note "${description}下载失败：curl 退出码 $download_result，HTTP ${http_code:-未知}。"
+      case "$download_result" in
+        130|143) return "$download_result" ;;
+        5|6|7|18|28|35|52|55|56) ;;
+        22) [[ "$http_code" == 408 || "$http_code" == 429 || "$http_code" == 5[0-9][0-9] ]] || break ;;
+        *) break ;;
+      esac
+      if (( attempt < 3 )); then
+        jobs_brew_note '临时连接失败，1 秒后重试同一官方地址。'
+        sleep 1 || return 1
+      fi
+    done
+    jobs_brew_note '当前官方地址不可用；如有下一官方地址，将继续下载，安装目录保持原选择。'
+  done
+  jobs_brew_note "获取${description}失败，未执行安装。请检查网络、DNS、终端 HTTPS_PROXY / ALL_PROXY 配置及上述官方域名的可达性；日志：${LOG_FILE:-终端输出}。"
+  return "$download_result"
+}
+# 校验官方安装脚本后仅执行一次，下载失败与安装失败分别报告。
 jobs_brew_install_system() {
   local installer system_prefix="$(jobs_brew_system_prefix)" installer_result=0
   command -v curl >/dev/null 2>&1 || { jobs_brew_note "缺少 curl，无法获取官方安装器。"; return 1; }
   installer="$(mktemp "${TMPDIR:-/tmp}/jobs-homebrew-install.XXXXXX")" || return 1
-  if curl -fsSL --connect-timeout 10 --max-time 120 https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$installer"; then
-    /bin/bash "$installer" || installer_result=$?
+  if jobs_brew_download_file "$installer" 'Homebrew 官方安装器' \
+      https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh \
+      'https://api.github.com/repos/Homebrew/install/contents/install.sh?ref=HEAD'; then
+    if [[ ! -s "$installer" || "$(head -n 1 "$installer")" != '#!/bin/bash' ]] || ! /bin/bash -n "$installer"; then
+      rm -f -- "$installer"
+      jobs_brew_note '官方安装器响应为空或内容校验失败（可能是 HTML / JSON 错误页）；未执行安装。'
+      return 1
+    fi
   else
-    installer_result=1
+    installer_result=$?
+    rm -f -- "$installer"
+    jobs_brew_note "系统目录安装器下载失败（curl 退出码 $installer_result）；尚未执行安装，不自动切换安装路径。"
+    return "$installer_result"
   fi
+  /bin/bash "$installer" || installer_result=$?
   rm -- "$installer"
   if (( installer_result != 0 )); then
     jobs_brew_note "系统目录安装失败（退出码 $installer_result）；停止，不自动切换安装路径。"
@@ -95,7 +147,8 @@ jobs_brew_install_user() {
   export HOMEBREW_NO_SUDO=1
   mkdir -p "${prefix:h}" || return 1
   stage="$(mktemp -d "${prefix:h}/.jobs-homebrew.XXXXXX")" || return 1
-  if ! curl -fsSL --connect-timeout 10 --max-time 60 https://api.github.com/repos/Homebrew/brew/releases/latest -o "$stage/release.json"; then
+  if ! jobs_brew_download_file "$stage/release.json" 'Homebrew 官方稳定版本' \
+      https://api.github.com/repos/Homebrew/brew/releases/latest; then
     rm -r -- "$stage"
     jobs_brew_note "获取官方稳定版本失败，停止安装。"
     return 1
@@ -189,6 +242,10 @@ jobs_brew_install_or_exit() {
 # 输出诊断，不污染函数返回的解释器路径。
 _jobs_python_note() {
   print -u2 -r -- "$*"
+  if [[ "${_JOBS_ENV_LOG_READY:-0}" == 1 && -n "${LOG_FILE:-}" ]]; then
+    print -r -- "$*" >> "$LOG_FILE"
+  fi
+  return 0
 }
 # 标识当前 zsh 进程及其子 shell，避免继承环境绕过确认。
 _jobs_python_process_token() {
@@ -571,86 +628,80 @@ jobs_python_prepare_venv() {
 SCRIPT_FILE="${(%):-%x}"
 SCRIPT_DIR=""
 LOG_FILE=""
-# 只为自述准备脚本定位与日志路径，不产生文件写入。
+PYTHON_BIN=""
+_JOBS_ENV_LOG_READY=0
+# 无副作用地准备展示路径，不修改运行环境或写日志。
 prepare_display_paths() {
     SCRIPT_DIR="${${functions_source[prepare_display_paths]}:A:h}"
-    LOG_FILE="${TMPDIR:-/tmp}/JobsCodexAccountSwitcher-build.log"
+    LOG_FILE="${TMPDIR:-/tmp}"
+    LOG_FILE="${LOG_FILE%/}/JobsCodexAccountSwitcher-build.log"
 }
-# 仅渲染自述：标题红色加粗，编号正文蓝色常规字重；非彩色终端输出纯文本。
-jobs_intro_style() {
-  local intro_color=0
-  if [ -t 1 ] && [ -n "${TERM:-}" ] && [ "${TERM:-}" != dumb ] &&
-     [ -z "${NO_COLOR+x}" ] && [ "${PLAIN_OUTPUT:-0}" != 1 ] &&
-     [ "${IS_SOURCETREE_RUNTIME:-0}" != 1 ]; then
-    intro_color=1
-  fi
-  /usr/bin/awk -v color="$intro_color" -v role="${1:-body}" '
-    BEGIN { esc = sprintf("%c", 27) }
-    {
-      gsub(esc "\\[[0-9;]*m", "")
-      gsub(/\\(033|e|x1[bB])\[[0-9;]*m/, "")
-      if (!color || $0 ~ /^[[:space:]]*$/) { print; next }
-      numbered = ($0 ~ /^[[:space:]➤ℹ🔹✔⚠]*([0-9]+[、.)）]|[0-9]+️⃣|[-•])/)
-      heading = ($0 ~ /^[[:space:]]*#{1,6}[[:space:]]/ || $0 ~ /[：:][[:space:]]*$/ || $0 ~ /^[[:space:]]*[=━─-]{3}/)
-      title = (!numbered && (role == "title" || heading))
-      if (role == "auto" && !seen && !numbered) title = 1
-      if ($0 !~ /^[[:space:]]*[=━─-]+[[:space:]]*$/) seen = 1
-      printf "%s%s%s\n", esc (title ? "[1;31m" : "[0;34m"), $0, esc "[0m"
-    }
-  '
-}
-# 将单行自述交给纯展示样式函数，确认与业务逻辑不进入管道。
+# 彩色终端使用红色粗体标题和蓝色常规正文，其它环境纯文本展示。
 print_intro_line() {
-    print -r -- "$2" | jobs_intro_style "$1"
+    local role="$1"
+    local message="$2"
+    if [[ -t 1 && -n "${TERM:-}" && "${TERM:-}" != dumb && -z "${NO_COLOR+x}" ]]; then
+        if [[ "$role" == title ]]; then
+            printf '\033[1;31m%s\033[0m\n' "$message"
+        else
+            printf '\033[0;34m%s\033[0m\n' "$message"
+        fi
+    else
+        print -r -- "$message"
+    fi
 }
-# 展示构建范围，在真实业务开始前等待回车确认。
+# 先展示固定自述；健康环境的构建确认统一由内层完成。
 show_script_intro_and_wait() {
     prepare_display_paths
-    print_intro_line title 'Jobs Codex 账户切换器与 Token 浮窗 · macOS 打包'
-    print_intro_line body '环境：先更新 Homebrew，再检查并修复 Python；缺失依赖回车安装。'
-    print_intro_line body '1、清理当前工具 dist 旧包；缺失依赖回车安装、任意字符取消。'
-    print_intro_line body '2、生成账户工具 APP、独立 Token APP 与 DMG，两 APP 必须安装在同一目录。'
-    print_intro_line body '3、成功后更新两 APP/DMG 链接、打开位置并启动 Token 浮窗。'
-    print_intro_line body '4、只构建软件，不切换账户，不写入 Codex 钩子。'
-    print_intro_line body "日志：${LOG_FILE}；按 Ctrl+C 取消。"
-    [[ -t 0 ]] || { print -u2 -- '请在终端运行。'; exit 1; }
-    local answer=''
-    IFS= read -r '?按回车继续；输入任意字符或 Ctrl+C 取消：' answer || exit 1
-    [[ -z "$answer" ]] || { print -r -- '已取消。'; exit 1; }
+    print_intro_line title 'Jobs Codex Account Switcher · macOS 本机打包'
+    print_intro_line body '1、生成账户切换器独立 APP / DMG，仅清理本工具固定 dist 旧产物。'
+    print_intro_line body '2、先更新或安装 Homebrew，再准备其管理的 Python 3.11+；缺失依赖回车安装。'
+    print_intro_line body '3、Python 满足要求时不升级；任意非空输入取消安装；输出 dist/YYYY.MM.DD HH-mm-ss，验证后更新相对链接。'
+    print_intro_line body '4、打开本次磁盘位置，再启动本次 APP；成功结尾不再等待。'
+    print_intro_line body '5、Homebrew 下载临时失败时，每地址最多尝试 3 次；官方安装器可改用 GitHub 官方 API，安装路径保持原选择。'
+    print_intro_line body "日志：${LOG_FILE}；环境准备与内层构建分别等待回车确认，Ctrl+C 取消。"
+    if [[ "${1:-}" == '--help' || "${1:-}" == '-h' ]]; then
+        print -r -- '用法：双击此脚本或在终端运行；--help 仅显示说明，无副作用。'
+        exit 0
+    fi
 }
-# 在确认后初始化原生 zsh 运行选项。
-initialize_runtime() {
-    setopt NO_NOMATCH
-    setopt PIPE_FAIL
+# 只允许 macOS 入口，避免其它平台先安装不适用的运行时。
+check_platform() {
+    if [[ "$(uname -s)" != Darwin ]]; then
+        print -u2 -- '此入口仅支持 macOS；Windows 请运行【Windows】📦生成exe.bat。'
+        exit 1
+    fi
 }
-# 验证系统 Python 及完整构建路径。
+# 在本脚本内部准备 Homebrew 与兼容的 Python。
+prepare_python_runtime() {
+  jobs_python_confirm_prepare "将更新 Homebrew，并检查本工具的 Python 环境" || exit 1
+  : > "$LOG_FILE" || { print -u2 -r -- "无法创建环境准备日志：$LOG_FILE"; exit 1; }
+  _JOBS_ENV_LOG_READY=1
+  jobs_python_ensure 3.11 python@3.13 || exit 1
+}
+# 在构建前完成内置运行时自检。
 check_environment() {
-    [[ -x "$JOBS_PYTHON_BIN" ]] || { print -u2 -- "内置 Python 自检未完成。"; exit 1; }
+    prepare_python_runtime
+    PYTHON_BIN="$JOBS_PYTHON_BIN"
     if [[ -e "$SCRIPT_DIR/JobsCodexAccountSwitcher/.venv" || -L "$SCRIPT_DIR/JobsCodexAccountSwitcher/.venv" ]]; then
         jobs_python_prepare_venv "$SCRIPT_DIR/JobsCodexAccountSwitcher/.venv" 3.11 || exit 1
     fi
 }
-# 执行构建器，其自述同时保护直接调用入口。
+# 转交已验证解释器；内层保留实际构建和清理前的唯一防误触确认。
 run_build() {
-    PYTHONDONTWRITEBYTECODE=1 "$JOBS_PYTHON_BIN" "$SCRIPT_DIR/JobsCodexAccountSwitcher/scripts/build.py"
+    setopt NO_NOMATCH
+    PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$SCRIPT_DIR/JobsCodexAccountSwitcher/scripts/build.py" "$@"
     local build_result=$?
     if (( build_result != 0 )); then
-        print -u2 -- '打包失败，请查看构建器错误与系统临时目录日志。'
+        print -u2 -- "打包已停止；请查看上方错误和日志：${LOG_FILE}"
     fi
     exit "$build_result"
 }
-# 编排双击入口。
-# 在本脚本内部准备 Homebrew 与兼容的 Python。
-prepare_python_runtime() {
-  jobs_python_mark_confirmed || exit 1
-  jobs_python_ensure 3.11 python@3.13 || exit 1
-}
-# 编排当前入口的业务步骤。
+# 编排自述、运行时检查和构建，不在解释器检查阶段清理旧产物。
 main() {
-    show_script_intro_and_wait # 先确认范围，避免误触。
-    initialize_runtime # 确认后设置原生 zsh 运行选项。
-    prepare_python_runtime # 内置功能更新 Homebrew、检查并修复 Python。
-    check_environment # 确认 Python 和标准库健康。
-    run_build # 生成两个真实入口及分发包，再定位并启动 Token 浮窗。
+    show_script_intro_and_wait "$@" # 首屏展示范围；内层负责构建防误触确认。
+    check_platform # 安装和清理前先拒绝不适用的平台。
+    check_environment # 复用健康运行时；缺失分支交互确认后安装并复检。
+    run_build "$@" # 生成、验证、定位并启动本次 APP，透传参数。
 }
 main "$@"

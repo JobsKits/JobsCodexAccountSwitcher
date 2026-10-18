@@ -104,6 +104,18 @@ class UITests(unittest.TestCase):
             self.assertFalse(window.vault.protected)
             window.close()
 
+    def test_account_window_only_exposes_account_controls(self):
+        from PySide6.QtWidgets import QPushButton
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            window = Window(root, QSettings(str(root / 'prefs.ini'), QSettings.Format.IniFormat))
+            buttons = [button.text() for button in window.findChildren(QPushButton)]
+            self.assertIn('添加账户（独立浏览器授权）', buttons)
+            self.assertIn('保存当前登录账户', buttons)
+            self.assertFalse(any('Token' in text or '联动' in text for text in buttons))
+            self.assertFalse(hasattr(window, 'open_token_widget'))
+            window.close()
+
     def test_rename_updates_selected_account_and_cancel_keeps_label(self):
         from test_core import auth
         from PySide6.QtCore import Qt
