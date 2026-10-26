@@ -3,3 +3,4 @@
 "/.jobs-markdown-toc/README.md" filter=jobs-markdown-toc
 "/README.md" filter=jobs-markdown-toc
 # jobs-markdown-toc:end
+*.bat text eol=crlf

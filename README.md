@@ -25,7 +25,15 @@
 
 ## <span id="jobs-toc-heading-1" data-jobs-toc="v2">🔥 <font id=前言>前言</font></span><!-- jobs-toc:heading-end -->
 
+**最低支持系统：[Windows](https://www.microsoft.com/windows) 10 64 位（x64）。** 这是当前最低支持目标；具体最低 build 尚未锁定，完整实机兼容性仍待验证。
+
 使用 [**Python**](https://www.python.org/) 和 [**PySide6**](https://doc.qt.io/qtforpython-6/) 编写的 [**macOS**](https://www.apple.com/macos/) / [**Windows**](https://www.microsoft.com/windows) 账户切换工具。通过保存、恢复 [**Codex**](https://openai.com/codex) 的文件登录缓存并重启桌面应用，减少重复浏览器授权。添加账户在独立临时 `CODEX_HOME` 中授权，不覆盖当前桌面登录文件。
+
+[**Windows**](https://www.microsoft.com/windows) **兼容范围：当前构建与成品测试目标为 Windows 10 / 11 x64；Windows XP、Vista、7、8、8.1 不支持当前图形依赖。** [**Qt 6.8 官方 Windows 平台表**](https://doc.qt.io/qt-6.8/windows.html)列出的 x64 基线为 Windows 10 1809+ / Windows 11；本项目未锁定具体运行库版本，不能据此承诺每次构建都兼容同一最低系统版本。
+
+成品已包含 [**Python**](https://www.python.org) 与图形依赖，运行成品无需另外安装 Python；源码运行和打包才需要开发依赖。EXE 架构随构建所用 Python 和依赖 wheel 决定，x86 / ARM64 尚无统一交付验收；Windows 原生界面与分发仍须在对应目标机验证。
+
+构建要求为 `Python>=3.11`、`PySide6>=6.8,<7`、`PyInstaller>=6.10,<7`，另含账户加密与进程依赖，详见[依赖配置](./JobsCodexAccountSwitcher/pyproject.toml)。Windows 使用 `onedir` 分发，保留 EXE 与 `_internal/` 完整目录，不能只拷 EXE。
 
 Token 上下行监控由同级 [JobsCodexTokenMonitor](../JobsCodexTokenMonitor.py/README.md) 独立提供；本工程只提供账户管理，不包含用量监控或钩子配置功能。启动器保留旧钩子的退役应答，避免已运行会话因缓存旧命令而报错。
 
