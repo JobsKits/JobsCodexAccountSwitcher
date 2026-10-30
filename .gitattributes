@@ -2,5 +2,6 @@
 # jobs-markdown-toc:start
 "/.jobs-markdown-toc/README.md" filter=jobs-markdown-toc
 "/README.md" filter=jobs-markdown-toc
+"/JobsCodexAccountSwitcher/scripts/README.md" filter=jobs-markdown-toc
 # jobs-markdown-toc:end
 *.bat text eol=crlf

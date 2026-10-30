@@ -35,6 +35,14 @@ REQUIREMENTS = {
 }
 
 
+def configure_output():
+    """Windows 终端/重定向统一 UTF-8，只影响当前构建进程。"""
+    if sys.platform == 'win32':
+        for stream in (sys.stdout, sys.stderr):
+            if stream is not None and hasattr(stream, 'reconfigure'):
+                stream.reconfigure(encoding='utf-8', errors='backslashreplace')
+
+
 def confirm(message):
     """回车才继续；非空输入（包含空格）、EOF 和非终端全部停止。"""
     if not sys.stdin.isatty():
@@ -64,6 +72,8 @@ def child_environment():
                    if key not in ('QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH')
                    and not key.startswith('_PYI_')}
     environment['PYTHONDONTWRITEBYTECODE'] = '1'
+    environment['PYTHONUTF8'] = '1'
+    environment['PYTHONIOENCODING'] = 'utf-8'
     return environment
 
 
@@ -297,13 +307,14 @@ def build(python):
 
 def main():
     """help 无副作用；正常构建先确认，再创建日志及检查完整依赖链。"""
+    configure_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepared', action='store_true',
                         help='只读验证当前解释器依赖；禁止安装依赖，仍保留构建确认')
     args = parser.parse_args()
     show_intro()
     confirm('已了解构建范围及旧产物删除')
-    logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO, encoding='utf-8',
                         format='%(asctime)s %(levelname)s %(message)s', force=True)
     check_platform()
     fixed_directory('dist')

@@ -1,5 +1,8 @@
 """构建中的删除边界、依赖取消和入口发布保护。Created by Jobs."""
 import importlib.util
+import ast
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
 import subprocess
 import sys
@@ -148,12 +151,41 @@ class BuildSafetyTests(unittest.TestCase):
             input_mock.assert_not_called()
 
     def test_current_healthy_interpreter_is_reused_without_writes(self):
-        with patch.object(build, 'missing_requirements', return_value=[]):
+        with redirect_stdout(io.StringIO()), patch.object(build, 'missing_requirements', return_value=[]):
             with patch.object(build.venv, 'EnvBuilder') as environment, patch.object(build, 'run') as run:
                 self.assertEqual(build.bootstrap(), Path(sys.executable))
                 environment.assert_not_called()
                 run.assert_not_called()
                 self.assertFalse((self.root / '.venv').exists())
+
+    def test_windows_gbk_redirect_is_reconfigured_before_unicode_build_output(self):
+        buffer = io.BytesIO()
+        output = io.TextIOWrapper(buffer, encoding='gbk', errors='strict')
+        try:
+            with patch.object(build.sys, 'platform', 'win32'), patch.object(build.sys, 'stdout', output):
+                build.configure_output()
+                with patch.object(build, 'missing_requirements', return_value=[]):
+                    self.assertEqual(build.bootstrap(), Path(sys.executable))
+            output.flush()
+            self.assertIn('✔ 复用当前解释器', buffer.getvalue().decode('utf-8'))
+        finally:
+            output.close()
+
+    def test_main_prepares_output_before_help_without_build_mutation(self):
+        with redirect_stdout(io.StringIO()), patch.object(build.sys, 'argv', ['build.py', '--help']):
+            with patch.object(build, 'configure_output') as configure, patch.object(build, 'build') as actual_build:
+                with self.assertRaises(SystemExit) as raised:
+                    build.main()
+                self.assertEqual(raised.exception.code, 0)
+                configure.assert_called_once()
+                actual_build.assert_not_called()
+
+    def test_child_python_output_is_utf8_for_redirected_build_logs(self):
+        with patch.dict(build.os.environ, {'PYTHONIOENCODING': 'gbk', 'PYTHONUTF8': '0'}):
+            child = build.child_environment()
+            self.assertEqual(child['PYTHONIOENCODING'], 'utf-8')
+            self.assertEqual(child['PYTHONUTF8'], '1')
+            self.assertEqual(build.os.environ['PYTHONIOENCODING'], 'gbk')
 
     def test_dependency_cancellation_precedes_environment_creation(self):
         with patch.object(build, 'missing_requirements', return_value=['PySide6>=6.8,<7']):
@@ -323,8 +355,13 @@ class BuildSafetyTests(unittest.TestCase):
         with patch.object(build.sys, 'platform', 'darwin'):
             spec = build.write_spec(work, '0.3.0')
         text = spec.read_text(encoding='utf-8')
-        self.assertIn(str(self.root / 'scripts/launch.py'), text)
-        self.assertIn(str(icon), text)
+        tree = ast.parse(text)
+        analysis = next(node for node in ast.walk(tree)
+                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id == 'Analysis')
+        self.assertEqual(ast.literal_eval(analysis.args[0]), [str(self.root / 'scripts/launch.py')])
+        datas = next(keyword.value for keyword in analysis.keywords if keyword.arg == 'datas')
+        self.assertEqual(ast.literal_eval(datas), [(str(icon), 'assets')])
         self.assertIn(build.NAME + '.app', text)
         self.assertNotIn('create_token_launcher', text)
 

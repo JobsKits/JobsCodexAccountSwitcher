@@ -2,6 +2,8 @@
 rem Created by Jobs. Build Jobs Codex Account Switcher EXE directory and ZIP on Windows.
 rem Only this tool's dist is cleared. The inner builder confirms before any mutation.
 setlocal DisableDelayedExpansion
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
 chcp 65001 >nul
 echo Jobs Codex Account Switcher - Windows native build
 echo Removes only this tool's old dist packages after Enter confirmation.
